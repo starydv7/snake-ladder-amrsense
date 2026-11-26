@@ -45,12 +45,18 @@ export function QuizScreen({ game, player, canAnswer, onAnswer, onContinue }) {
 export function SnakeAlert({ pend, player, canContinue, onContinue }) {
   return (
     <Sheet tone="snake">
-      <div className="event-emoji">🐍</div>
-      <h2>Snake alert!</h2>
-      <p className="event-who">{player.avatar} {player.name}</p>
-      <p className="event-label">“{pend.label}”</p>
-      <p>Slide down from <strong>{pend.from}</strong> to <strong>{pend.to}</strong>. Misusing antibiotics sets everyone back.</p>
-      {canContinue && <button className="btn danger big" onClick={onContinue}>OK</button>}
+      <div className="event-badge bad" style={{ '--c': pend.color }}>
+        <span className="event-emoji">{pend.icon}</span>
+        <span className="event-snake">🐍</span>
+      </div>
+      <span className="chip bad">Snake alert · {pend.from} → {pend.to}</span>
+      <h2>{pend.title}</h2>
+      <p className="event-who">{player.avatar} {player.name} {pend.label.charAt(0).toLowerCase() + pend.label.slice(1)}</p>
+      <div className="fact-box bad">
+        <strong>AMR lesson</strong>
+        <p>{pend.fact}</p>
+      </div>
+      {canContinue && <button className="btn danger big" onClick={onContinue}>Got it</button>}
     </Sheet>
   );
 }
@@ -58,12 +64,18 @@ export function SnakeAlert({ pend, player, canContinue, onContinue }) {
 export function LadderReward({ pend, player, canContinue, onContinue }) {
   return (
     <Sheet tone="ladder">
-      <div className="event-emoji">🪜</div>
-      <h2>Health reward!</h2>
-      <p className="event-who">{player.avatar} {player.name}</p>
-      <p className="event-label">“{pend.label}”</p>
-      <p>Climb from <strong>{pend.from}</strong> to <strong>{pend.to}</strong>. <strong>+{pend.points} points</strong></p>
-      {canContinue && <button className="btn primary big" onClick={onContinue}>Climb!</button>}
+      <div className="event-badge good">
+        <span className="event-emoji">{pend.icon}</span>
+        <span className="event-snake">🪜</span>
+      </div>
+      <span className="chip good">Health reward · {pend.from} → {pend.to}</span>
+      <h2>{pend.title}</h2>
+      <p className="event-who">{player.avatar} {player.name} {pend.label.charAt(0).toLowerCase() + pend.label.slice(1)}</p>
+      <div className="fact-box good">
+        <strong>AMR lesson · +{pend.points} points</strong>
+        <p>{pend.fact}</p>
+      </div>
+      {canContinue && <button className="btn primary big" onClick={onContinue}>Awesome</button>}
     </Sheet>
   );
 }

@@ -66,6 +66,10 @@ export const saveGame = (state) => set('current', state);
 export const loadGame = () => get('current');
 export const clearGame = () => set('current', undefined);
 
+// Questions already shown in earlier games, so each new game starts with fresh ones.
+export const saveSeen = (ids) => set('seen', { ids, updatedAt: Date.now() });
+export const loadSeen = async () => ((await get('seen')) || {}).ids || [];
+
 export const savePrefs = (prefs) => set('prefs', prefs);
 export const loadPrefs = () => get('prefs');
 

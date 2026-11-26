@@ -1,11 +1,12 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { SNAKES, LADDERS } from '../data/board.js';
-import { cellCenter } from '../engine/BoardEngine.js';
+import { cellCenter, snakeCenterline, taperedOutline, polyline } from '../engine/BoardEngine.js';
 import { COLORS } from '../theme.js';
 
-const SNAKE_COLORS = ['#2e7d32', '#6a1b9a', '#c62828', '#ef6c00', '#00838f', '#ad1457', '#4e342e', '#283593', '#558b2f', '#37474f'];
+const TILES = ['#fff3c4', '#cdeeff', '#ffd6e0', '#d3f5cc'];
+const SLOT = [[-2.5, -2.4], [2.5, -2.4], [-2.5, 2.4], [2.5, 2.4]];
 
-function Ladder({ from, to }) {
+function Ladder({ from, to, active }) {
   const a = cellCenter(from);
   const b = cellCenter(to);
   const dx = b.x - a.x;
@@ -13,105 +14,145 @@ function Ladder({ from, to }) {
   const len = Math.hypot(dx, dy);
   const ux = dx / len;
   const uy = dy / len;
-  const nx = -uy * 1.7;
-  const ny = ux * 1.7;
+  const nx = -uy * 1.9;
+  const ny = ux * 1.9;
   const rungs = [];
-  for (let d = 3; d < len - 1; d += 4.2) {
+  for (let d = 3.5; d < len - 2; d += 4.4) {
     const cx = a.x + ux * d;
     const cy = a.y + uy * d;
     rungs.push(<line key={d} x1={cx + nx} y1={cy + ny} x2={cx - nx} y2={cy - ny} />);
   }
-  return (
-    <g stroke="#8d5a2b" strokeWidth="0.7" strokeLinecap="round" opacity="0.95">
+  const rails = (
+    <>
       <line x1={a.x + nx} y1={a.y + ny} x2={b.x + nx} y2={b.y + ny} />
       <line x1={a.x - nx} y1={a.y - ny} x2={b.x - nx} y2={b.y - ny} />
-      <g strokeWidth="0.6" stroke="#b9803f">{rungs}</g>
-    </g>
+    </>
   );
-}
-
-function Snake({ from, to, color, flip }) {
-  const a = cellCenter(from); // head
-  const b = cellCenter(to); // tail
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = (-dy / len) * 7 * (flip ? -1 : 1);
-  const ny = (dx / len) * 7 * (flip ? -1 : 1);
-  const c1 = { x: a.x + dx * 0.33 + nx, y: a.y + dy * 0.33 + ny };
-  const c2 = { x: a.x + dx * 0.66 - nx, y: a.y + dy * 0.66 - ny };
-  const d = `M${a.x} ${a.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`;
   return (
-    <g opacity="0.92" strokeLinecap="round" fill="none">
-      <path d={d} stroke={color} strokeWidth="2.6" />
-      <path d={d} stroke="#fff" strokeWidth="0.7" strokeDasharray="1.2 2.2" opacity="0.7" />
-      <circle cx={a.x} cy={a.y} r="2.3" fill={color} />
-      <circle cx={a.x - 0.8} cy={a.y - 0.7} r="0.55" fill="#fff" />
-      <circle cx={a.x + 0.8} cy={a.y - 0.7} r="0.55" fill="#fff" />
-      <circle cx={b.x} cy={b.y} r="0.9" fill={color} />
+    <g className={active ? 'jump-active' : ''} strokeLinecap="round">
+      <g stroke="rgba(0,0,0,.25)" strokeWidth="1.5" transform="translate(.5 .7)">{rails}</g>
+      <g stroke="#7a4a1e" strokeWidth="1.3">{rails}</g>
+      <g stroke="#d9a15b" strokeWidth=".75">{rails}</g>
+      <g stroke="#7a4a1e" strokeWidth="1.1">{rungs}</g>
+      <g stroke="#f0c27f" strokeWidth=".55">{rungs}</g>
     </g>
   );
 }
 
-const OFFSETS = [[-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4]];
-
-function BoardSvg({ players, shown, currentId, quizCells }) {
-  const cells = [];
-  for (let n = 1; n <= 100; n++) {
-    const { x, y, col, row } = cellCenter(n);
-    const dark = (col + row) % 2 === 0;
-    cells.push(
-      <g key={n}>
-        <rect
-          x={x - 5} y={y - 5} width="10" height="10"
-          fill={n === 100 ? '#ffe082' : dark ? '#e8f5e9' : '#c8e6c9'}
-          stroke="#a5d6a7" strokeWidth="0.2"
-        />
-        <text x={x - 4.3} y={y - 2.8} fontSize="2.6" fill="#4a6b55" fontWeight="600">{n}</text>
-        {quizCells.includes(n) && (
-          <g>
-            <circle cx={x + 2.6} cy={y + 2.6} r="1.9" fill="#1e88e5" />
-            <text x={x + 2.6} y={y + 3.55} fontSize="2.6" fill="#fff" textAnchor="middle" fontWeight="700">?</text>
-          </g>
-        )}
-        {n === 100 && <text x={x} y={y + 3} fontSize="5" textAnchor="middle">🏆</text>}
+function Snake({ from, to, color, active }) {
+  const { body, line, head, angle } = useMemo(() => {
+    const pts = snakeCenterline(from, to, 48);
+    const p0 = pts[0];
+    const p1 = pts[3];
+    return {
+      body: taperedOutline(pts),
+      line: polyline(pts),
+      head: p0,
+      angle: (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI + 180
+    };
+  }, [from, to]);
+  return (
+    <g className={`snake ${active ? 'jump-active' : ''}`} style={{ transformOrigin: `${head.x}px ${head.y}px` }}>
+      <path d={body} fill="rgba(0,0,0,.25)" transform="translate(.5 .8)" />
+      <path d={body} fill={color} stroke="rgba(0,0,0,.35)" strokeWidth=".35" strokeLinejoin="round" />
+      <path d={line} fill="none" stroke="rgba(255,255,255,.55)" strokeWidth=".9" strokeLinecap="round" strokeDasharray="1.1 1.7" />
+      <path d={line} fill="none" stroke="rgba(0,0,0,.18)" strokeWidth=".5" strokeLinecap="round" strokeDasharray=".4 3.2" />
+      <g transform={`translate(${head.x} ${head.y}) rotate(${angle})`}>
+        <path d="M2.2 0 L5 -.7 M2.2 0 L5 .7 M2.2 0 L4.2 0" stroke="#e53935" strokeWidth=".35" fill="none" strokeLinecap="round" className="tongue" />
+        <ellipse cx="0" cy="0" rx="2.9" ry="2.3" fill={color} stroke="rgba(0,0,0,.4)" strokeWidth=".35" />
+        <circle cx="-.2" cy="-1.1" r=".85" fill="#fff" />
+        <circle cx="-.2" cy="1.1" r=".85" fill="#fff" />
+        <circle cx="-.05" cy="-1.1" r=".42" fill="#111" />
+        <circle cx="-.05" cy="1.1" r=".42" fill="#111" />
       </g>
-    );
-  }
+    </g>
+  );
+}
 
-  // Group tokens by shown cell so shared cells show side-by-side.
+function Token({ player, pos, hopKey, isCur, slot, shared, idx }) {
+  const isObj = typeof pos === 'object';
+  const c = isObj ? pos : cellCenter(pos);
+  const [ox, oy] = isObj ? [0, 0] : shared ? SLOT[slot % 4] : pos === 0 ? [idx * 6.5, 0] : [0, 0];
+  const hex = COLORS[player.color].hex;
+  return (
+    <g style={{ transform: `translate(${c.x + ox}px, ${c.y + oy}px)`, transition: `transform ${isObj ? 0.09 : 0.24}s linear` }}>
+      <ellipse cy="2.3" rx="2.6" ry="1" fill="rgba(0,0,0,.35)" />
+      <g className={isObj ? 'token-slide' : 'hop'} key={hopKey}>
+        {isCur && <circle r="4" fill="none" stroke="#fff" strokeWidth=".7" className="pulse" />}
+        <circle r="3" fill={hex} stroke="#fff" strokeWidth=".7" />
+        <circle r="3" fill="url(#shine)" />
+        <text y="1.15" fontSize="3.3" textAnchor="middle">{player.avatar}</text>
+      </g>
+    </g>
+  );
+}
+
+function BoardSvg({ players, shown, currentId, quizCells, activeJump }) {
+  const cells = useMemo(() => {
+    const out = [];
+    for (let n = 1; n <= 100; n++) {
+      const { x, y, col, row } = cellCenter(n);
+      out.push(
+        <g key={n}>
+          <rect x={x - 5} y={y - 5} width="10" height="10" fill={n === 100 ? 'url(#gold)' : TILES[(col + row * 3) % 4]} stroke="#fff" strokeWidth=".35" />
+          <rect x={x - 5} y={y - 5} width="10" height="10" fill="url(#tileShade)" />
+          <text x={x - 4.2} y={y - 2.6} fontSize="2.7" fill="#3b4d44" fontWeight="700" opacity=".85">{n}</text>
+          {quizCells.includes(n) && (
+            <g className="qbadge" style={{ transformOrigin: `${x + 2.6}px ${y + 2.6}px` }}>
+              <circle cx={x + 2.6} cy={y + 2.6} r="2.1" fill="#2979ff" stroke="#fff" strokeWidth=".4" />
+              <text x={x + 2.6} y={y + 3.65} fontSize="3" fill="#fff" textAnchor="middle" fontWeight="800">?</text>
+            </g>
+          )}
+          {n === 100 && <text x={x} y={y + 3.2} fontSize="5.6" textAnchor="middle">🏆</text>}
+        </g>
+      );
+    }
+    return out;
+  }, [quizCells]);
+
   const byCell = {};
   players.forEach((p) => {
     const c = shown[p.id] ?? p.position;
-    (byCell[c] = byCell[c] || []).push(p.id);
+    if (typeof c === 'number') (byCell[c] = byCell[c] || []).push(p.id);
   });
 
   return (
-    <svg viewBox="0 0 100 108" className="board-svg" role="img" aria-label="Snake and ladder board">
-      <rect x="0" y="0" width="100" height="108" rx="2" fill="#0b6e4f" />
+    <svg viewBox="-2 -2 104 112" className="board-svg" role="img" aria-label="Snake and ladder board">
+      <defs>
+        <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#0f8a63" /><stop offset="1" stopColor="#065a40" />
+        </linearGradient>
+        <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff2a8" /><stop offset="1" stopColor="#ffc93c" />
+        </linearGradient>
+        <linearGradient id="tileShade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity=".35" /><stop offset="1" stopColor="#000" stopOpacity=".06" />
+        </linearGradient>
+        <radialGradient id="shine" cx=".35" cy=".3" r=".8">
+          <stop offset="0" stopColor="#fff" stopOpacity=".65" /><stop offset=".6" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="-2" y="-2" width="104" height="112" rx="4" fill="url(#frame)" />
+      <rect x="-.4" y="-.4" width="100.8" height="100.8" rx="1.2" fill="none" stroke="#f5d98a" strokeWidth=".6" />
       {cells}
-      <rect x="0" y="100" width="100" height="8" fill="#0b6e4f" />
-      <text x="16" y="105.2" fontSize="3.6" fill="#fff" fontWeight="700">START</text>
-      {Object.entries(LADDERS).map(([f, l]) => <Ladder key={`l${f}`} from={+f} to={l.to} />)}
-      {Object.entries(SNAKES).map(([f, s], i) => (
-        <Snake key={`s${f}`} from={+f} to={s.to} color={SNAKE_COLORS[i % SNAKE_COLORS.length]} flip={i % 2 === 0} />
-      ))}
+      <text x="38" y="105.6" fontSize="3.8" fill="#fff" fontWeight="800" letterSpacing=".4">START</text>
+      <text x="95" y="105.6" fontSize="3" fill="#bde8d4" textAnchor="end" fontWeight="700">AMRsense</text>
+      {Object.entries(LADDERS).map(([f, l]) => <Ladder key={`l${f}`} from={+f} to={l.to} active={activeJump === +f} />)}
+      {Object.entries(SNAKES).map(([f, s]) => <Snake key={`s${f}`} from={+f} to={s.to} color={s.color} active={activeJump === +f} />)}
       {players.map((p, idx) => {
-        const cell = shown[p.id] ?? p.position;
-        const { x, y } = cellCenter(cell);
-        const shared = byCell[cell].length > 1;
-        const slot = byCell[cell].indexOf(p.id);
-        const [ox, oy] = shared ? OFFSETS[slot % 4] : cell === 0 ? [idx * 6.5, 0] : [0, 0];
-        const isCur = p.id === currentId;
+        const pos = shown[p.id] ?? p.position;
+        const grp = typeof pos === 'number' ? byCell[pos] : null;
         return (
-          <g
+          <Token
             key={p.id}
-            style={{ transform: `translate(${x + ox}px, ${y + oy}px)`, transition: 'transform 0.26s ease-out' }}
-          >
-            {isCur && <circle r="3.8" fill="none" stroke="#fff" strokeWidth="0.6" className="pulse" />}
-            <circle r="2.7" fill={COLORS[p.color].hex} stroke="#fff" strokeWidth="0.6" />
-            <text y="1.1" fontSize="3.1" textAnchor="middle">{p.avatar}</text>
-          </g>
+            player={p}
+            pos={pos}
+            hopKey={`${p.id}-${typeof pos === 'number' ? pos : 'slide'}`}
+            isCur={p.id === currentId}
+            shared={!!grp && grp.length > 1}
+            slot={grp ? grp.indexOf(p.id) : 0}
+            idx={idx}
+          />
         );
       })}
     </svg>

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Screen } from '../components/Layout.jsx';
 import { COLORS } from '../theme.js';
 import { computeAchievements } from '../engine/achievements.js';
@@ -5,6 +6,28 @@ import { computeAchievements } from '../engine/achievements.js';
 export default function GameResults({ results, onReplay, onHome }) {
   const medals = ['🥇', '🥈', '🥉', '4️⃣'];
   const winner = results[0];
+  const confetti = useMemo(
+    () => Array.from({ length: 36 }, (_, i) => ({
+      left: `${(i * 97) % 100}%`,
+      bg: ['#ffc83d', '#ff6b6b', '#34d399', '#2979ff', '#c471ed'][i % 5],
+      dur: `${2.4 + ((i * 13) % 17) / 10}s`,
+      delay: `${((i * 7) % 15) / 10}s`
+    })),
+    []
+  );
+  return (
+    <>
+      <div className="confetti" aria-hidden="true">
+        {confetti.map((c, i) => (
+          <span key={i} style={{ left: c.left, background: c.bg, animationDuration: c.dur, animationDelay: c.delay }} />
+        ))}
+      </div>
+      <ResultsBody results={results} winner={winner} medals={medals} onReplay={onReplay} onHome={onHome} />
+    </>
+  );
+}
+
+function ResultsBody({ results, winner, medals, onReplay, onHome }) {
   return (
     <Screen
       title="Game over"

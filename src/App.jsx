@@ -7,7 +7,7 @@ import GameSettings from './screens/GameSettings.jsx';
 import GameBoard from './screens/GameBoard.jsx';
 import GameResults from './screens/GameResults.jsx';
 import { createGame, buildResults, DEFAULT_SETTINGS } from './engine/GameEngine.js';
-import { loadGame, saveGame, clearGame, loadPrefs, savePrefs, addResult } from './services/GameStorage.js';
+import { loadGame, saveGame, clearGame, loadPrefs, savePrefs, addResult, loadSeen } from './services/GameStorage.js';
 import { setSoundEnabled } from './services/sound.js';
 import { BOT_AVATAR, COLOR_KEYS, defaultHumans, defaultName } from './theme.js';
 
@@ -65,7 +65,8 @@ export default function App() {
   const afterMode = () => (mode === 'single' ? setScreen('setup') : setScreen('count'));
 
   const startGame = useCallback(async () => {
-    const g = createGame({ mode, settings, players: buildPlayers(humans, count) });
+    const seen = await loadSeen();
+    const g = createGame({ mode, settings, players: buildPlayers(humans, count), seen });
     await saveGame(g);
     savePrefs({ humans, settings });
     setSaved(null);
@@ -91,9 +92,10 @@ export default function App() {
   const resume = () => { setGame(saved); setScreen('board'); };
   const discard = async () => { await clearGame(); setSaved(null); };
 
-  const replay = () => {
+  const replay = async () => {
     const players = game.players.map((p) => ({ name: p.name, avatar: p.avatar, color: p.color, isBot: p.isBot }));
-    const g = createGame({ mode: game.mode, settings: game.settings, players });
+    const seen = await loadSeen();
+    const g = createGame({ mode: game.mode, settings: game.settings, players, seen });
     saveGame(g);
     setGame(g);
     setScreen('board');

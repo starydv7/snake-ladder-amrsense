@@ -32,7 +32,7 @@ export function quizCellsFor(settings) {
   return QUIZ_CELLS.filter((_, i) => i % step === 0);
 }
 
-export function createGame({ mode, settings, players }) {
+export function createGame({ mode, settings, players, seen = [] }) {
   const now = Date.now();
   return {
     version: 1,
@@ -60,7 +60,7 @@ export function createGame({ mode, settings, players }) {
     phase: 'AWAIT_ROLL',
     moveNo: 0,
     asked: 0,
-    usedQ: [],
+    usedQ: [...seen],
     pending: null,
     lastMove: null,
     rankings: [],
@@ -132,13 +132,13 @@ export function roll(state, rng = Math.random, forcedDice) {
       jump = 'snake';
       to = snake.to;
       p.snakes += 1;
-      pending = { id, kind: 'snake', from: mv.landing, to, label: snake.label };
+      pending = { id, kind: 'snake', from: mv.landing, to, label: snake.label, title: snake.title, icon: snake.icon, fact: snake.fact, color: snake.color };
     } else if (ladder) {
       jump = 'ladder';
       to = ladder.to;
       p.ladders += 1;
       p.points += LADDER_POINTS;
-      pending = { id, kind: 'ladder', from: mv.landing, to, label: ladder.label, points: LADDER_POINTS };
+      pending = { id, kind: 'ladder', from: mv.landing, to, label: ladder.label, title: ladder.title, icon: ladder.icon, fact: ladder.fact, points: LADDER_POINTS };
     } else if (
       quizCellsFor(s.settings).includes(mv.landing) &&
       s.asked < QUESTION_LIMITS[s.settings.questionFrequency]

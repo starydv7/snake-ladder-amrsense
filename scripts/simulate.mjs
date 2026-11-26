@@ -33,7 +33,12 @@ function playOut(state, rng) {
 // 1. static board sanity
 for (const [f, s] of Object.entries(SNAKES)) assert.ok(s.to < +f && !SNAKES[s.to] && !LADDERS[s.to], `snake ${f}`);
 for (const [f, l] of Object.entries(LADDERS)) assert.ok(l.to > +f && !SNAKES[l.to] && !LADDERS[l.to], `ladder ${f}`);
-for (const q of QUESTIONS) assert.equal(q.en.options.length, 4, q.id);
+assert.ok(QUESTIONS.length >= 200, 'need 200+ questions, have ' + QUESTIONS.length);
+assert.equal(new Set(QUESTIONS.map((q) => q.en.q)).size, QUESTIONS.length, 'duplicate question text');
+for (const q of QUESTIONS) { assert.equal(q.en.options.length, 4, q.id); assert.equal(new Set(q.en.options).size, 4, 'duplicate option ' + q.id); assert.ok(q.en.explanation, q.id); }
+for (const d of [1, 2, 3]) assert.ok(QUESTIONS.filter((q) => q.difficulty === d).length >= 30, 'difficulty ' + d);
+for (const [f, s] of Object.entries(SNAKES)) assert.ok(s.title && s.fact && s.label, 'snake text ' + f);
+assert.equal(new Set(Object.values(SNAKES).map((s) => s.label)).size, Object.keys(SNAKES).length, 'each snake has its own message');
 
 // 2. full games for 2/3/4 players, every rule combination
 let games = 0;
@@ -84,20 +89,21 @@ const base = (rule = 'exact_100') => createGame({ mode: 'local', settings: { ...
   assert.equal(g.status, 'completed'); assert.equal(g.finalRanking[0], 'p1');
 }
 { // snake: exactly one jump, no chaining; ladder awards points once
-  let g = base(); g.players[0].position = 10;
-  g = roll(g, Math.random, 6); // 16 -> 6
-  assert.equal(g.players[0].position, 6); assert.equal(g.pending.kind, 'snake');
+  let g = base(); g.players[0].position = 24;
+  g = roll(g, Math.random, 6); // 30 -> 10
+  assert.equal(g.players[0].position, 10); assert.equal(g.pending.kind, 'snake');
   g = ackEvent(g); assert.equal(g.turn, 1);
-  g = roll(g, Math.random, 1); // 1 -> ladder 38
-  assert.equal(g.players[1].position, 38); assert.equal(g.players[1].points, 10);
+  g.players[1].position = 3;
+  g = roll(g, Math.random, 1); // 4 -> ladder 26
+  assert.equal(g.players[1].position, 26); assert.equal(g.players[1].points, 10);
 }
 { // two tokens on the same square is allowed
-  let g = base(); g.players[0].position = 10; g.players[1].position = 12;
-  g = roll(g, Math.random, 2); g = ackEvent(g.pending ? g : g);
-  assert.equal(g.players[0].position, 12);
+  let g = base(); g.players[0].position = 14; g.players[1].position = 16;
+  g = roll(g, Math.random, 2);
+  assert.equal(g.players[0].position, 16); assert.equal(g.players[1].position, 16);
 }
 { // resume: a saved state restores exactly (JSON round trip mid-event)
-  let g = base(); g.players[0].position = 10;
+  let g = base(); g.players[0].position = 24;
   g = roll(g, Math.random, 6);
   const restored = JSON.parse(JSON.stringify(g));
   assert.deepEqual(restored, g);
@@ -105,8 +111,8 @@ const base = (rule = 'exact_100') => createGame({ mode: 'local', settings: { ...
 }
 { // extra roll on six when enabled
   let g = createGame({ mode: 'local', settings: { ...DEFAULT_SETTINGS, extraRollOnSix: true }, players: mk(2) });
-  g.players[0].position = 50;
-  g = roll(g, Math.random, 6); // 56 -> snake; ack gives bonus roll
+  g.players[0].position = 24;
+  g = roll(g, Math.random, 6); // 30 -> snake; ack gives bonus roll
   g = ackEvent(g);
   assert.equal(g.turn, 0);
 }

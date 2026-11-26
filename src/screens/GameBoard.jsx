@@ -3,8 +3,9 @@ import BoardSvg from '../components/BoardSvg.jsx';
 import { Dice, Sheet } from '../components/Layout.jsx';
 import { QuizScreen, SnakeAlert, LadderReward, FinishModal } from './EventScreens.jsx';
 import { roll, ackEvent, answerQuiz, botChoice, quizCellsFor } from '../engine/GameEngine.js';
+import { snakeSlidePoints, ladderClimbPoints } from '../engine/BoardEngine.js';
 import { QUESTION_LIMITS } from '../services/QuestionService.js';
-import { saveGame } from '../services/GameStorage.js';
+import { saveGame, saveSeen } from '../services/GameStorage.js';
 import { sfx, setSoundEnabled } from '../services/sound.js';
 import { COLORS } from '../theme.js';
 
@@ -19,11 +20,13 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   const [paused, setPaused] = useState(false);
   const [soundOn, setSoundOn] = useState(initial.settings.sound);
   const [toast, setToast] = useState('');
+  const [pop, setPop] = useState(null); // { n, key }
+  const [fx, setFx] = useState(null); // 'snake' | 'ladder'
+  const [activeJump, setActiveJump] = useState(null);
 
   const pausedRef = useRef(false);
   const aliveRef = useRef(true);
   const busyRef = useRef(false);
-  const rollingRef = useRef(false);
   const overRef = useRef(false);
 
   useEffect(() => { pausedRef.current = paused; }, [paused]);
@@ -44,19 +47,11 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     };
   }, []);
 
-  // Dice face flicker while rolling (visual only).
-  useEffect(() => {
-    if (!rolling) return undefined;
-    const t = setInterval(() => {
-      if (rollingRef.current) setDiceVal(1 + Math.floor(Math.random() * 6));
-    }, 90);
-    return () => clearInterval(t);
-  }, [rolling]);
-
   const commit = useCallback((next) => {
     gRef.current = next;
     setG(next);
     saveGame(next);
+    saveSeen(next.usedQ);
   }, []);
 
   const wait = useCallback(async (ms) => {
@@ -68,37 +63,49 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     const cur = gRef.current;
     if (busyRef.current || pausedRef.current || cur.phase !== 'AWAIT_ROLL' || cur.status !== 'in_progress') return;
     busyRef.current = true;
-    const next = roll(cur); // result is committed immediately; animation below only displays it
+    const next = roll(cur); // result is committed immediately; the animation below only displays it
     if (next === cur) { busyRef.current = false; return; }
     commit(next);
     const m = next.lastMove;
     setEventVisible(false);
-    rollingRef.current = true;
     setRolling(true);
     sfx.dice();
-    await wait(700);
+    await wait(1000);
     if (!aliveRef.current) return;
-    rollingRef.current = false;
     setDiceVal(m.dice);
     setRolling(false);
+    setPop({ n: m.dice, key: m.id });
     setMoving(true);
-    if (m.blocked) setToast(`Need an exact roll to reach 100`);
-    await wait(300);
+    await wait(900);
+    if (!aliveRef.current) return;
+    setPop(null);
+    if (m.blocked) setToast('Need an exact roll to reach 100');
     for (const c of m.path) {
       if (!aliveRef.current) return;
       setShown((s) => ({ ...s, [m.playerId]: c }));
       sfx.step();
-      await wait(240);
+      await wait(260);
     }
     if (m.jump) {
-      await wait(350);
+      await wait(400);
       if (!aliveRef.current) return;
+      setActiveJump(m.landing);
+      setFx(m.jump);
       m.jump === 'ladder' ? sfx.ladder() : sfx.snake();
-      setShown((s) => ({ ...s, [m.playerId]: m.to }));
-      await wait(700);
+      await wait(450);
+      const pts = m.jump === 'snake' ? snakeSlidePoints(m.landing, m.to) : ladderClimbPoints(m.landing, m.to);
+      for (const pt of pts) {
+        if (!aliveRef.current) return;
+        setShown((s) => ({ ...s, [m.playerId]: pt }));
+        await wait(m.jump === 'snake' ? 60 : 85);
+      }
+      await wait(250);
+      setFx(null);
+      setActiveJump(null);
     }
     if (!aliveRef.current) return;
     setShown((s) => ({ ...s, [m.playerId]: m.to }));
+    await wait(200);
     setMoving(false);
     setEventVisible(true);
     busyRef.current = false;
@@ -127,13 +134,12 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     let t;
     if (g.phase === 'AWAIT_ROLL') t = setTimeout(doRoll, 1000);
     else if (g.phase === 'AWAIT_ACK' && eventVisible) {
-      if (g.pending.kind === 'quiz' && !g.pending.answered) t = setTimeout(() => answer(botChoice(gRef.current)), 2200);
-      else t = setTimeout(ack, 2200);
+      if (g.pending.kind === 'quiz' && !g.pending.answered) t = setTimeout(() => answer(botChoice(gRef.current)), 2500);
+      else t = setTimeout(ack, 2500);
     }
     return () => clearTimeout(t);
   }, [g, paused, moving, rolling, eventVisible, doRoll, ack, answer]);
 
-  // Event sounds.
   useEffect(() => {
     if (!eventVisible || moving || rolling || !g.pending) return;
     if (g.pending.kind === 'finish') sfx.win();
@@ -155,9 +161,11 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   const canRoll = !busy && !paused && g.phase === 'AWAIT_ROLL' && humanTurn && g.status === 'in_progress';
   const showEvent = g.phase === 'AWAIT_ACK' && eventVisible && !busy && g.pending;
   const limit = QUESTION_LIMITS[g.settings.questionFrequency];
+  const lastDice = g.lastMove?.dice;
 
   let status = `${turnPlayer.name}'s turn`;
-  if (busy) status = `${turnPlayer.name} rolled ${g.lastMove.dice}`;
+  if (rolling) status = `${turnPlayer.name} is rolling…`;
+  else if (busy) status = `${turnPlayer.name} rolled ${lastDice}`;
   else if (turnPlayer.isBot) status = 'Computer is playing…';
 
   return (
@@ -171,25 +179,36 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
         <button className="icon-btn" onClick={() => setSoundOn((v) => !v)} aria-label="Sound">{soundOn ? '🔊' : '🔇'}</button>
       </header>
 
-      <div className="board-wrap">
-        <BoardSvg players={g.players} shown={shown} currentId={turnPlayer.id} quizCells={quizCells} />
+      <div className={`board-wrap ${fx ? `fx-${fx}` : ''}`}>
+        <BoardSvg players={g.players} shown={shown} currentId={turnPlayer.id} quizCells={quizCells} activeJump={activeJump} />
+        {pop && (
+          <div className="roll-pop" key={pop.key} style={{ '--c': COLORS[turnPlayer.color].hex }}>
+            <span className="roll-pop-n">{pop.n}</span>
+            <span className="roll-pop-t">{turnPlayer.name} rolled</span>
+          </div>
+        )}
+        {fx === 'snake' && <div className="fx-text bad">🐍 Snake bite!</div>}
+        {fx === 'ladder' && <div className="fx-text good">🪜 Climb up!</div>}
         {toast && <div className="toast">{toast}</div>}
       </div>
 
       <div className="players-strip">
-        {g.players.map((p) => (
-          <div key={p.id} className={`pcard ${p.id === turnPlayer.id ? 'cur' : ''} ${p.status === 'finished' ? 'done' : ''}`} style={{ '--c': COLORS[p.color].hex }}>
-            <span className="pavatar">{p.avatar}</span>
-            <strong>{p.name}</strong>
-            <small>{p.status === 'finished' ? `🏁 #${p.rank}` : `Sq ${shown[p.id] ?? p.position}`} · {p.points} pts</small>
-          </div>
-        ))}
+        {g.players.map((p) => {
+          const pos = shown[p.id] ?? p.position;
+          return (
+            <div key={p.id} className={`pcard ${p.id === turnPlayer.id ? 'cur' : ''} ${p.status === 'finished' ? 'done' : ''}`} style={{ '--c': COLORS[p.color].hex }}>
+              <span className="pavatar">{p.avatar}</span>
+              <strong>{p.name}</strong>
+              <small>{p.status === 'finished' ? `🏁 #${p.rank}` : `Sq ${typeof pos === 'number' ? pos : p.position}`} · {p.points} pts</small>
+            </div>
+          );
+        })}
       </div>
 
       <footer className="roll-bar">
-        <Dice value={diceVal} rolling={rolling} />
-        <button className="btn primary roll-btn" disabled={!canRoll} onClick={doRoll}>
-          {canRoll ? 'Roll the dice' : busy ? 'Moving…' : humanTurn ? 'Please wait…' : 'Computer’s turn'}
+        <Dice value={diceVal} rolling={rolling} size={64} />
+        <button className={`btn primary roll-btn ${canRoll ? 'ready' : ''}`} disabled={!canRoll} onClick={doRoll}>
+          {canRoll ? '🎲 Roll the dice' : busy ? 'Moving…' : humanTurn ? 'Please wait…' : 'Computer’s turn'}
         </button>
         <span className="qcount" title="AMR questions asked">❓ {g.asked}/{limit}</span>
       </footer>
