@@ -1,0 +1,10 @@
+{
+  "appId": "org.amrsense.snakeladder",
+  "appName": "AMRsense Snake & Ladder",
+  "webDir": "dist",
+  "backgroundColor": "#0A3D2E",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force",
+    "allowMixedContent": false
+  }
+}
