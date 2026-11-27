@@ -2,15 +2,37 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import BoardSvg from '../components/BoardSvg.jsx';
 import { Dice, Sheet } from '../components/Layout.jsx';
 import { QuizScreen, SnakeAlert, LadderReward, FinishModal } from './EventScreens.jsx';
-import { roll, ackEvent, answerQuiz, botChoice, quizCellsFor } from '../engine/GameEngine.js';
+import { roll, ackEvent, answerQuiz, botChoice, quizCellsFor, skipTurn } from '../engine/GameEngine.js';
 import { snakeSlidePoints, ladderClimbPoints, fitCellHeight } from '../engine/BoardEngine.js';
 import { QUESTION_LIMITS } from '../services/QuestionService.js';
 import { saveGame, saveSeen } from '../services/GameStorage.js';
 import { sfx, setSoundEnabled } from '../services/sound.js';
+import { levelInfo } from '../data/levels.js';
 import { COLORS } from '../theme.js';
 
-// Each player gets this many seconds to roll. When it runs out the game rolls for them.
-export const TURN_SECONDS = 30;
+// Each player has this many seconds to tap the dice. If time runs out the
+// turn is lost: the token stays where it is and the next player goes.
+export const TURN_SECONDS = 15;
+
+function PlayerChip({ p, pos, isCur, timer, side }) {
+  return (
+    <div className={`pchip ${side} ${isCur ? 'cur' : ''} ${p.status === 'finished' ? 'done' : ''}`} style={{ '--c': COLORS[p.color].hex }}>
+      <span className="pchip-av">
+        {p.avatar}
+        {timer && (
+          <svg className={`ring ${timer.warn ? 'warn' : ''}`} viewBox="0 0 40 40" aria-hidden="true">
+            <circle className="bg" cx="20" cy="20" r="18" pathLength="100" />
+            <circle className="fg" cx="20" cy="20" r="18" pathLength="100" strokeDasharray={`${(timer.left / TURN_SECONDS) * 100} 100`} />
+          </svg>
+        )}
+      </span>
+      <span className="pchip-text">
+        <strong>{p.name}</strong>
+        <small>{p.status === 'finished' ? `🏁 #${p.rank}` : `Sq ${pos}`} · {p.points}pts</small>
+      </span>
+    </div>
+  );
+}
 
 export default function GameBoard({ initial, onGameOver, onExit }) {
   const [g, setG] = useState(initial);
@@ -22,13 +44,12 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   const [eventVisible, setEventVisible] = useState(true);
   const [paused, setPaused] = useState(false);
   const [soundOn, setSoundOn] = useState(initial.settings.sound);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState(null);
   const [pop, setPop] = useState(null);
   const [fx, setFx] = useState(null);
   const [activeJump, setActiveJump] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(TURN_SECONDS);
 
-  // Board sizing: fill the free space between the top of the screen and the bottom panel.
+  // Board sizing: fill the free space between the top bar and the bottom dock.
   const fitRef = useRef(null);
   const [ch, setCh] = useState(10);
   const chRef = useRef(10);
@@ -50,12 +71,19 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   const aliveRef = useRef(true);
   const busyRef = useRef(false);
   const overRef = useRef(false);
+  const toastTimer = useRef(null);
 
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => { setSoundEnabled(soundOn); }, [soundOn]);
   useEffect(() => {
     aliveRef.current = true;
-    return () => { aliveRef.current = false; };
+    return () => { aliveRef.current = false; clearTimeout(toastTimer.current); };
+  }, []);
+
+  const showToast = useCallback((text, tone = 'info', ms = 1800) => {
+    clearTimeout(toastTimer.current);
+    setToast({ text, tone, key: Date.now() });
+    toastTimer.current = setTimeout(() => setToast(null), ms);
   }, []);
 
   // Auto-pause when the app goes to the background (incoming call, home button).
@@ -101,7 +129,7 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     await wait(900);
     if (!aliveRef.current) return;
     setPop(null);
-    if (m.blocked) setToast('Need an exact roll to reach 100');
+    if (m.blocked) showToast('Need an exact roll to reach 100');
     for (const c of m.path) {
       if (!aliveRef.current) return;
       setShown((s) => ({ ...s, [m.playerId]: c }));
@@ -133,8 +161,7 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     setMoving(false);
     setEventVisible(true);
     busyRef.current = false;
-    if (m.blocked) setTimeout(() => setToast(''), 1600);
-  }, [commit, wait]);
+  }, [commit, wait, showToast]);
 
   const ack = useCallback(() => {
     const n = ackEvent(gRef.current);
@@ -156,7 +183,7 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
     const cur = g.players[g.turn];
     if (!cur.isBot) return undefined;
     let t;
-    if (g.phase === 'AWAIT_ROLL') t = setTimeout(doRoll, 1000);
+    if (g.phase === 'AWAIT_ROLL') t = setTimeout(doRoll, 1100);
     else if (g.phase === 'AWAIT_ACK' && eventVisible) {
       if (g.pending.kind === 'quiz' && !g.pending.answered) t = setTimeout(() => answer(botChoice(gRef.current)), 2500);
       else t = setTimeout(ack, 2500);
@@ -178,6 +205,7 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   }, [g, moving, rolling, onGameOver]);
 
   const quizCells = useMemo(() => quizCellsFor(g.settings), [g.settings]);
+  const L = levelInfo(g.settings.level);
   const busy = moving || rolling;
   const turnPlayer = busy && g.lastMove ? g.players.find((p) => p.id === g.lastMove.playerId) : g.players[g.turn];
   const cur = g.players[g.turn];
@@ -186,40 +214,83 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
   const showEvent = g.phase === 'AWAIT_ACK' && eventVisible && !busy && g.pending;
   const limit = QUESTION_LIMITS[g.settings.questionFrequency];
 
-  // ---- 30-second turn timer ----
-  // Restarts whenever a new turn begins; freezes while paused; auto-rolls at 0.
-  const turnKey = `${g.moveNo}-${g.turn}-${g.phase}`;
-  useEffect(() => { setTimeLeft(TURN_SECONDS); }, [turnKey]);
+  // ---- 15-second turn timer ----
+  // The timer belongs to one turn (turnKey). It freezes while paused and,
+  // when it reaches 0, the player loses the turn.
+  const turnKey = `${g.moveNo}-${g.turn}`;
+  const turnKeyRef = useRef(turnKey);
+  turnKeyRef.current = turnKey;
+  const [timer, setTimer] = useState({ key: turnKey, left: TURN_SECONDS });
+  const timeLeft = timer.key === turnKey ? timer.left : TURN_SECONDS;
+
   useEffect(() => {
     if (!canRoll) return undefined;
-    const t = setInterval(() => setTimeLeft((s) => Math.max(0, s - 1)), 1000);
+    const t = setInterval(() => {
+      setTimer((prev) => {
+        const k = turnKeyRef.current;
+        const left = prev.key === k ? prev.left : TURN_SECONDS;
+        return { key: k, left: Math.max(0, left - 1) };
+      });
+    }, 1000);
     return () => clearInterval(t);
-  }, [canRoll]);
+  }, [canRoll, turnKey]);
+
   useEffect(() => {
-    if (canRoll && timeLeft === 0) {
-      setToast(`⏰ Time up! Rolling for ${cur.name}`);
-      setTimeout(() => setToast(''), 1800);
-      doRoll();
-    }
-  }, [timeLeft, canRoll, doRoll, cur.name]);
+    if (!canRoll || timer.key !== turnKey || timer.left !== 0) return;
+    const missed = gRef.current.players[gRef.current.turn];
+    const n = skipTurn(gRef.current);
+    if (n === gRef.current) return;
+    commit(n);
+    sfx.wrong();
+    showToast(`⏰ Time up! ${missed.name} missed this turn`, 'bad', 2200);
+  }, [timer, turnKey, canRoll, commit, showToast]);
+
   useEffect(() => {
     if (canRoll && timeLeft > 0 && timeLeft <= 5) sfx.step();
   }, [timeLeft, canRoll]);
 
-  const timerOn = canRoll || (paused && humanTurn && g.phase === 'AWAIT_ROLL');
-  const warn = timeLeft <= 10;
+  const timerOn = humanTurn && g.phase === 'AWAIT_ROLL' && !busy && g.status === 'in_progress';
+  const warn = timeLeft <= 5;
 
   let status = `${turnPlayer.name}'s turn`;
   if (rolling) status = `${turnPlayer.name} is rolling…`;
   else if (busy) status = `${turnPlayer.name} rolled ${g.lastMove?.dice}`;
   else if (turnPlayer.isBot) status = 'Computer is playing…';
-  else if (g.phase === 'AWAIT_ROLL') status = `${turnPlayer.name}, roll the dice!`;
+  else if (g.phase === 'AWAIT_ROLL') status = `${turnPlayer.name}, tap the dice!`;
+
+  // Players sit on both sides of the dice: P1, P3 on the left; P2, P4 on the right.
+  const left = g.players.filter((_, i) => i % 2 === 0);
+  const right = g.players.filter((_, i) => i % 2 === 1);
+  const chip = (p, side) => {
+    const pos = shown[p.id] ?? p.position;
+    const isCur = p.id === turnPlayer.id;
+    return (
+      <PlayerChip
+        key={p.id}
+        p={p}
+        side={side}
+        pos={typeof pos === 'number' ? pos : p.position}
+        isCur={isCur}
+        timer={isCur && timerOn && p.id === cur.id ? { left: timeLeft, warn } : null}
+      />
+    );
+  };
 
   return (
     <div className="screen board-screen">
+      <header className="game-bar">
+        <button className="round-btn" onClick={() => setPaused(true)} aria-label="Pause">⏸</button>
+        <div className="level-pill" style={{ '--a': L.frame[0], '--b': L.frame[1] }}>
+          <span>{L.icon}</span>
+          <strong>Level {L.n}</strong>
+          <small>{L.name} · ❓ {g.asked}/{limit}</small>
+        </div>
+        <button className="round-btn" onClick={() => setSoundOn((v) => !v)} aria-label="Sound">{soundOn ? '🔊' : '🔇'}</button>
+      </header>
+
       <div className={`board-wrap ${fx ? `fx-${fx}` : ''}`}>
         <div className="board-fit" ref={fitRef}>
-          <BoardSvg players={g.players} shown={shown} currentId={turnPlayer.id} quizCells={quizCells} activeJump={activeJump} ch={ch} />
+          <BoardSvg players={g.players} shown={shown} currentId={turnPlayer.id} quizCells={quizCells} activeJump={activeJump} ch={ch} frame={L.frame} />
         </div>
         {pop && (
           <div className="roll-pop" key={pop.key} style={{ '--c': COLORS[turnPlayer.color].hex }}>
@@ -229,46 +300,36 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
         )}
         {fx === 'snake' && <div className="fx-text bad">🐍 Snake bite!</div>}
         {fx === 'ladder' && <div className="fx-text good">🪜 Climb up!</div>}
-        {toast && <div className="toast">{toast}</div>}
+        {toast && <div className={`toast ${toast.tone}`} key={toast.key}>{toast.text}</div>}
       </div>
 
-      <section className="panel">
-        <div className="status-row">
-          <span>{status}</span>
-          <span className="qcount">❓ {g.asked}/{limit}</span>
-        </div>
+      <section className="dock">
+        <p className="dock-status" key={status} style={{ '--c': COLORS[turnPlayer.color].hex }}>
+          <span className="dot" />{status}
+        </p>
+        <div className="dock-row">
+          <div className="side left">{left.map((p) => chip(p, 'left'))}</div>
 
-        <div className="players-row">
-          {g.players.map((p) => {
-            const pos = shown[p.id] ?? p.position;
-            const isCur = p.id === turnPlayer.id;
-            const showTimer = isCur && timerOn && p.id === cur.id;
-            return (
-              <div key={p.id} className={`pchip ${isCur ? 'cur' : ''} ${p.status === 'finished' ? 'done' : ''}`} style={{ '--c': COLORS[p.color].hex }}>
-                <span className="pchip-av">
-                  {p.avatar}
-                  {showTimer && (
-                    <svg className={`ring ${warn ? 'warn' : ''}`} viewBox="0 0 40 40" aria-hidden="true">
-                      <circle className="bg" cx="20" cy="20" r="18" pathLength="100" />
-                      <circle className="fg" cx="20" cy="20" r="18" pathLength="100" strokeDasharray={`${(timeLeft / TURN_SECONDS) * 100} 100`} />
-                    </svg>
-                  )}
-                </span>
-                {showTimer && <em className={`tleft ${warn ? 'warn' : ''}`}>{timeLeft}s</em>}
-                <strong>{p.name}</strong>
-                <small>{p.status === 'finished' ? `🏁 #${p.rank}` : `Sq ${typeof pos === 'number' ? pos : p.position}`} · {p.points}</small>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="controls">
-          <button className="icon-btn" onClick={() => setPaused(true)} aria-label="Pause">⏸</button>
-          <Dice value={diceVal} rolling={rolling} size={46} />
-          <button className={`btn primary roll-btn ${canRoll ? 'ready' : ''}`} disabled={!canRoll} onClick={doRoll}>
-            {canRoll ? `🎲 Roll · ${timeLeft}s` : busy ? 'Moving…' : humanTurn ? 'Please wait…' : 'Computer’s turn'}
+          <button
+            className={`dice-btn ${canRoll ? 'ready' : ''} ${warn && canRoll ? 'warn' : ''}`}
+            disabled={!canRoll}
+            onClick={doRoll}
+            aria-label={canRoll ? `Tap to roll the dice, ${timeLeft} seconds left` : 'Dice'}
+            style={{ '--c': COLORS[turnPlayer.color].hex }}
+          >
+            {timerOn && (
+              <svg className="dice-ring" viewBox="0 0 100 100" aria-hidden="true">
+                <circle className="bg" cx="50" cy="50" r="46" pathLength="100" />
+                <circle className="fg" cx="50" cy="50" r="46" pathLength="100" strokeDasharray={`${(timeLeft / TURN_SECONDS) * 100} 100`} />
+              </svg>
+            )}
+            <Dice value={diceVal} rolling={rolling} size={54} />
+            <span className="dice-label">
+              {canRoll ? `TAP · ${timeLeft}s` : rolling ? 'Rolling…' : busy ? 'Moving…' : turnPlayer.isBot ? 'CPU…' : paused ? 'Paused' : 'Wait'}
+            </span>
           </button>
-          <button className="icon-btn" onClick={() => setSoundOn((v) => !v)} aria-label="Sound">{soundOn ? '🔊' : '🔇'}</button>
+
+          <div className="side right">{right.map((p) => chip(p, 'right'))}</div>
         </div>
       </section>
 
@@ -287,12 +348,12 @@ export default function GameBoard({ initial, onGameOver, onExit }) {
 
       {paused && (
         <Sheet>
+          <div className="event-emoji">⏸️</div>
           <h2>Game paused</h2>
-          <p>Your game is saved automatically. The turn timer is paused.</p>
-          <p className="muted">AMR questions so far: {g.asked}/{limit}</p>
-          <button className="btn primary big" onClick={() => setPaused(false)}>Resume</button>
+          <p>Your game is saved. The turn timer is stopped.</p>
+          <button className="btn primary big" onClick={() => setPaused(false)}>▶ Resume</button>
           <button className="btn ghost-btn big" onClick={() => setSoundOn((v) => !v)}>{soundOn ? '🔊 Sound on' : '🔇 Sound off'}</button>
-          <button className="btn ghost-btn big" onClick={onExit}>Save &amp; exit</button>
+          <button className="btn ghost-btn big" onClick={onExit}>💾 Save &amp; exit</button>
         </Sheet>
       )}
     </div>

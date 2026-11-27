@@ -1,15 +1,27 @@
+// Standard screen: a slim top bar (Back on the left, step progress on the right),
+// then a left-aligned title, scrolling content and a sticky footer.
 export function Screen({ title, subtitle, step, onBack, children, footer }) {
+  const [cur, total] = step ? step.split('/').map(Number) : [0, 0];
   return (
     <div className="screen">
       <header className="top">
-        {onBack ? (
-          <button className="icon-btn" onClick={onBack} aria-label="Back">←</button>
-        ) : <span className="icon-btn ghost" />}
-        <div className="top-title">
-          <h1>{title}</h1>
-          {subtitle && <p>{subtitle}</p>}
+        <div className="top-bar">
+          {onBack ? (
+            <button className="back-btn" onClick={onBack} aria-label="Back">
+              <span className="back-arrow">‹</span> Back
+            </button>
+          ) : <span />}
+          {step && (
+            <div className="steps" aria-label={`Step ${cur} of ${total}`}>
+              {Array.from({ length: total }, (_, i) => (
+                <i key={i} className={i < cur ? (i === cur - 1 ? 'now' : 'done') : ''} />
+              ))}
+              <span>Step {cur}/{total}</span>
+            </div>
+          )}
         </div>
-        {step ? <span className="step">{step}</span> : <span className="icon-btn ghost" />}
+        <h1 className="title-pop" key={title}>{title}</h1>
+        {subtitle && <p className="subtitle">{subtitle}</p>}
       </header>
       <main className="content">{children}</main>
       {footer && <footer className="foot">{footer}</footer>}

@@ -1,6 +1,8 @@
 // Headless engine check: plays many full games and asserts the rules from the design.
 import assert from 'node:assert/strict';
-import { createGame, roll, ackEvent, answerQuiz, botChoice, buildResults, DEFAULT_SETTINGS } from '../src/engine/GameEngine.js';
+import { createGame, roll, ackEvent, answerQuiz, botChoice, buildResults, skipTurn, correctIndex, DEFAULT_SETTINGS } from '../src/engine/GameEngine.js';
+import { applyLevel, LEVELS } from '../src/data/levels.js';
+import { getQuestion } from '../src/services/QuestionService.js';
 import { SNAKES, LADDERS } from '../src/data/board.js';
 import { QUESTIONS } from '../src/data/questions.js';
 
@@ -122,6 +124,29 @@ const base = (rule = 'exact_100') => createGame({ mode: 'local', settings: { ...
   g.players[0].position = 2;
   g = roll(g, Math.random, 3); // lands on 5 (quiz)
   assert.equal(g.pending.kind, 'quiz');
+}
+
+{ // missed turn: token stays, next player goes, cannot skip during an event
+  let g = createGame({ mode: 'local', settings: DEFAULT_SETTINGS, players: mk(3) });
+  g.players[0].position = 40;
+  g = skipTurn(g);
+  assert.equal(g.turn, 1); assert.equal(g.players[0].position, 40); assert.equal(g.players[0].missed, 1);
+  g = skipTurn(g); assert.equal(g.turn, 2);
+  g = skipTurn(g); assert.equal(g.turn, 0, 'rotation wraps');
+  g.players[0].position = 24; g = roll(g, Math.random, 6);
+  assert.equal(skipTurn(g), g, 'no skip while an event is pending');
+}
+{ // levels: harder questions and more points per correct answer
+  for (const L of LEVELS) {
+    let g = createGame({ mode: 'local', settings: applyLevel({ ...DEFAULT_SETTINGS, level: L.n, questionFrequency: 'learning' }), players: mk(2) });
+    g.players[0].position = 2; g = roll(g, Math.random, 3);
+    assert.equal(g.pending.kind, 'quiz');
+    const q = getQuestion(g.pending.questionId);
+    if (L.difficulty === 'expert') assert.equal(q.difficulty, 3);
+    if (L.difficulty === 'easy') assert.equal(q.difficulty, 1);
+    g = answerQuiz(g, correctIndex(g.pending, q));
+    assert.equal(g.players[0].points, L.quizPoints);
+  }
 }
 
 console.log(`OK: ${games} full games + rule checks passed`);

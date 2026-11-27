@@ -22,7 +22,9 @@ export const DEFAULT_SETTINGS = {
   extraRollOnSix: false,
   language: 'en',
   sound: true,
-  botLevel: 'medium'
+  botLevel: 'medium',
+  level: 1,
+  quizPoints: QUIZ_POINTS
 };
 
 const QUIZ_STEP = { light: 3, standard: 2, learning: 1 };
@@ -180,6 +182,19 @@ export function roll(state, rng = Math.random, forcedDice) {
   return s;
 }
 
+// The current player did not roll in time: they lose this turn and the
+// next active player goes. Their token does not move.
+export function skipTurn(state) {
+  if (state.status !== 'in_progress' || state.phase !== 'AWAIT_ROLL') return state;
+  const s = clone(state);
+  const p = s.players[s.turn];
+  s.moveNo += 1;
+  p.missed = (p.missed || 0) + 1;
+  s.history.push({ id: `m${s.moveNo}`, playerId: p.id, skipped: true, at: Date.now() });
+  s.turn = nextTurnIndex(s.players, s.turn);
+  return s;
+}
+
 // Index (in displayed order) of the correct option.
 export function correctIndex(pending, question) {
   return pending.order.indexOf(question.answer);
@@ -196,7 +211,7 @@ export function answerQuiz(state, choice) {
   let points = 0;
   if (correct) {
     p.correct += 1;
-    points = QUIZ_POINTS;
+    points = s.settings.quizPoints ?? QUIZ_POINTS;
     p.points += points;
   }
   s.pending.answered = { choice, correct, points };

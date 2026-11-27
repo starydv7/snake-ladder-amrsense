@@ -2,7 +2,7 @@ import { QUESTIONS, CATEGORIES } from '../data/questions.js';
 
 export const QUESTION_LIMITS = { light: 5, standard: 10, learning: 20 };
 
-const DIFFICULTY_RANGE = { easy: [1, 1], normal: [1, 2], hard: [2, 3] };
+const DIFFICULTY_RANGE = { easy: [1, 1], normal: [1, 2], hard: [2, 3], expert: [3, 3] };
 
 export function getQuestion(id, language = 'en') {
   const raw = QUESTIONS.find((q) => q.id === id);

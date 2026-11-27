@@ -1,4 +1,5 @@
 import { Screen } from '../components/Layout.jsx';
+import { LEVELS } from '../data/levels.js';
 
 function Group({ label, value, options, onChange }) {
   return (
@@ -21,20 +22,46 @@ function Group({ label, value, options, onChange }) {
   );
 }
 
-export default function GameSettings({ settings, hasBot, onChange, onBack, onStart }) {
+function LevelPicker({ value, unlocked, onChange }) {
+  return (
+    <section className="card setting">
+      <div className="label">Level</div>
+      <div className="levels">
+        {LEVELS.map((l) => {
+          const locked = l.n > unlocked;
+          return (
+            <button
+              key={l.n}
+              disabled={locked}
+              className={`level-btn ${value === l.n ? 'on' : ''} ${locked ? 'locked' : ''}`}
+              style={{ '--a': l.frame[0], '--b': l.frame[1] }}
+              onClick={() => onChange(l.n)}
+            >
+              <span className="level-icon">{locked ? '🔒' : l.icon}</span>
+              <strong>Level {l.n}</strong>
+              <small>{l.name}</small>
+            </button>
+          );
+        })}
+      </div>
+      <small className="hint">
+        {LEVELS[value - 1].tagline}. Finish a level to unlock the next one.
+      </small>
+    </section>
+  );
+}
+
+export default function GameSettings({ settings, unlocked, hasBot, onChange, onBack, onStart }) {
   const set = (k) => (v) => onChange({ ...settings, [k]: v });
   return (
     <Screen
       title="Customise your game"
+      subtitle="Choose a level and how you want to play"
       step="4/4"
       onBack={onBack}
-      footer={<button className="btn primary big" onClick={onStart}>Start game</button>}
+      footer={<button className="btn primary big" onClick={onStart}>🚀 Start Level {settings.level}</button>}
     >
-      <Group label="Difficulty" value={settings.difficulty} onChange={set('difficulty')} options={[
-        { id: 'easy', title: 'Easy', text: 'Hints, simpler questions' },
-        { id: 'normal', title: 'Normal', text: 'Balanced' },
-        { id: 'hard', title: 'Hard', text: 'Tougher questions' }
-      ]} />
+      <LevelPicker value={settings.level} unlocked={unlocked} onChange={set('level')} />
 
       {hasBot && (
         <Group label="Computer skill" value={settings.botLevel} onChange={set('botLevel')} options={[
@@ -62,7 +89,7 @@ export default function GameSettings({ settings, hasBot, onChange, onBack, onSta
       ]} />
 
       <Group label="Extra roll on six" value={settings.extraRollOnSix ? 'on' : 'off'} onChange={(v) => onChange({ ...settings, extraRollOnSix: v === 'on' })} options={[
-        { id: 'off', title: 'Off', text: 'Simple (default)' },
+        { id: 'off', title: 'Off', text: 'Simple' },
         { id: 'on', title: 'On', text: 'Traditional' }
       ]} />
 
@@ -77,7 +104,7 @@ export default function GameSettings({ settings, hasBot, onChange, onBack, onSta
           <strong>Sound effects</strong>
           <small>Dice, snakes, ladders</small>
         </div>
-        <button className={`toggle ${settings.sound ? 'on' : ''}`} onClick={() => onChange({ ...settings, sound: !settings.sound })} aria-pressed={settings.sound}>
+        <button className={`toggle ${settings.sound ? 'on' : ''}`} onClick={() => onChange({ ...settings, sound: !settings.sound })} aria-pressed={settings.sound} aria-label="Sound effects">
           <span />
         </button>
       </section>

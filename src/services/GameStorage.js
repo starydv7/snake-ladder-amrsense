@@ -70,8 +70,10 @@ export const clearGame = () => set('current', undefined);
 export const saveSeen = (ids) => set('seen', { ids, updatedAt: Date.now() });
 export const loadSeen = async () => ((await get('seen')) || {}).ids || [];
 
-export const savePrefs = (prefs) => set('prefs', prefs);
-export const loadPrefs = () => get('prefs');
+
+// Highest level the user has unlocked.
+export const saveProgress = (maxLevel) => set('progress', { maxLevel, updatedAt: Date.now() });
+export const loadProgress = async () => ((await get('progress')) || {}).maxLevel || 1;
 
 export async function addResult(record) {
   const list = (await get('results')) || [];

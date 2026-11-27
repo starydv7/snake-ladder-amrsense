@@ -88,7 +88,7 @@ function Token({ player, pos, hopKey, isCur, slot, shared, idx, ch }) {
   );
 }
 
-function BoardSvg({ players, shown, currentId, quizCells, activeJump, ch = 10 }) {
+function BoardSvg({ players, shown, currentId, quizCells, activeJump, ch = 10, frame = ['#0f8a63', '#065a40'] }) {
   const H = 10 * ch;
 
   const cells = useMemo(() => {
@@ -124,7 +124,7 @@ function BoardSvg({ players, shown, currentId, quizCells, activeJump, ch = 10 })
     <svg viewBox={`-2 -2 104 ${H + START_STRIP + 4}`} className="board-svg" role="img" aria-label="Snake and ladder board">
       <defs>
         <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#0f8a63" /><stop offset="1" stopColor="#065a40" />
+          <stop offset="0" stopColor={frame[0]} /><stop offset="1" stopColor={frame[1]} />
         </linearGradient>
         <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fff2a8" /><stop offset="1" stopColor="#ffc93c" />
