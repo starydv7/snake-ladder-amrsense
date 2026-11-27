@@ -11,7 +11,7 @@ export function getQuestion(id, language = 'en') {
   return {
     id: raw.id,
     category: raw.category,
-    categoryInfo: CATEGORIES[raw.category],
+    categoryInfo: { icon: CATEGORIES[raw.category].icon, label: language === 'hi' ? CATEGORIES[raw.category].hi : CATEGORIES[raw.category].label },
     difficulty: raw.difficulty,
     answer: raw.answer,
     q: t.q,
